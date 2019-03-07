@@ -32,7 +32,7 @@
 
 <template>
   <div id="app">
-    <Card title="结构树">
+    <Card title="服务树">
       <div style="position:relative">
         <div id="areaTree">
           <div class="tree-box">
@@ -50,25 +50,17 @@
         </Modal>
         <!-- 右键菜单 -->
         <div id="rMenu" ref="rMenu" v-show="bShowRightMenu">
-          <Card
-            class="rMenuCard"
-            :title="'菜单-'+currentNode.name"
-            icon="md-pricetags"
-            :padding="0"
-            shadow
-          >
+          <Card class="rMenuCard" title="菜单" icon="md-pricetags" :padding="0" shadow>
             <CellGroup @on-click="handleRightMenu">
               <Cell name="add" title="新建节点" icon="ios-options">
                 <Icon type="ios-add-circle-outline" slot="icon"/>
               </Cell>
-              <template v-if="currentNode.level!==0">
-                <Cell name="edit" title="重命名节点" icon="ios-options">
-                  <Icon type="ios-create-outline" slot="icon"/>
-                </Cell>
-                <Cell name="del" title="删除节点" icon="ios-options">
-                  <Icon type="ios-remove-circle-outline" slot="icon"/>
-                </Cell>
-              </template>
+              <Cell name="edit" title="重命名节点" icon="ios-options">
+                <Icon type="ios-create-outline" slot="icon"/>
+              </Cell>
+              <Cell name="del" title="删除节点" icon="ios-options">
+                <Icon type="ios-remove-circle-outline" slot="icon"/>
+              </Cell>
               <Divider/>
               <Cell :name="1" title="添加资产到节点" icon="ios-options">
                 <Icon type="md-add-circle" slot="icon"/>
@@ -90,7 +82,6 @@
   </div>
 </template>
 <script>
-// import API from "@/libs/API";
 import jQuery from "jquery/dist/jquery.min.js";
 
 export default {
@@ -98,29 +89,31 @@ export default {
     return {
       // 是否展示右键菜单
       bShowRightMenu: false,
-      //   操作确认模态框
-      bModalConfirm: false,
-      //   操作确认文案
-      strShowInfo: "",
       //   新增节点模态框
       bModalNode: false,
       //   新增节点名称
       new_node_name: "",
-      //   节点信息
-      objNode: {},
-      //   节点信息修改API
-      strUrl: "",
       //   原始数据
-      objData: [],
+      objData: [
+        { id: 1, pId: 0, name: "节点 1", open: true },
+        { id: 11, pId: 1, name: "节点 1-1", open: true },
+        { id: 12, pId: 1, name: "节点 1-2", open: true },
+        { id: 111, pId: 11, name: "节点 1-1-1", open: true },
+        { id: 112, pId: 11, name: "节点 1-1-2", open: true },
+        { id: 122, pId: 12, name: "节点 1-2-1", open: true },
+        { id: 121, pId: 12, name: "节点 1-2-2", open: true }
+      ],
       //   当前节点
       currentNode: {},
+      //   ztree对象
+      zTree: null,
       //   zTree属性配置
       setting: {
         data: {
           simpleData: {
             enable: true,
             idKey: "id",
-            pIdKey: "parent_id",
+            pIdKey: "pId",
             rootPId: 0
           }
         },
@@ -139,10 +132,8 @@ export default {
           editNameSelectAll: true,
           // 设置是否显示删除按钮
           showRemoveBtn: false, //this.showRemoveBtn,
-          removeTitle: "删除节点",
           // 设置是否显示编辑名称按钮
           showRenameBtn: false, //this.showRenameBtn,
-          renameTitle: "修改节点名称",
           drag: {
             //   拖拽时父节点自动展开是否触发 onExpand 事件回调函数
             autoExpandTrigger: true,
@@ -167,6 +158,8 @@ export default {
           beforeDrop: this.beforeDrop,
           //   重命名前
           beforeRename: this.beforeRename,
+          //   重命名
+          onRename: this.onRename,
           //   删除前
           beforeRemove: this.beforeRemove,
           //   右击事件
@@ -182,23 +175,17 @@ export default {
     },
     // 右击菜单选择
     handleRightMenu(name) {
-      console.log("name", name);
       switch (name) {
         case "add":
           this.bModalNode = true;
           this.new_node_name = "";
           break;
         case "edit":
-          var treeObj = $.fn.zTree.getZTreeObj("treeDemo");
-          treeObj.editName(this.currentNode);
+          this.zTree.editName(this.currentNode);
           break;
         case "del":
-          let objParams = {
-            id: this.currentNode.id,
-            node_fullname: this.currentNode.fullname,
-            parent_id: this.currentNode.parent_id
-          };
-          this.ajaxDataDelete(objParams);
+          this.zTree.selectNode(this.currentNode);
+          this.zTree.removeNode(this.currentNode, true);
           break;
 
         default:
@@ -209,9 +196,10 @@ export default {
     // 右击
     onRightClick(event, treeId, treeNode) {
       this.currentNode = treeNode;
-      let x = event.clientX + document.body.scrollLeft - 200,
-        y = event.clientY + document.body.scrollTop - 170;
-      if (this.$refs.rMenu) {
+      let x = event.clientX + document.body.scrollLeft - 20,
+        y = event.clientY + document.body.scrollTop - 78;
+
+      if (treeNode && this.$refs.rMenu) {
         this.bShowRightMenu = true;
         this.$refs.rMenu.style.top = y + "px";
         this.$refs.rMenu.style.left = x + "px";
@@ -219,110 +207,39 @@ export default {
     },
     // 保存新增节点
     handleSave() {
-      this.strUrl = API.serviceTree.add;
-      this.objNode = {
-        node_name: this.new_node_name,
-        parent_id: this.currentNode.id,
-        node_desc: "描述：" + this.currentNode.name
-      };
-      this.ajaxDataEdit();
+      let len = this.currentNode.children
+        ? this.currentNode.children.length
+        : 0;
+      let str = Number(len + 1) + "";
+      let res = Number(this.currentNode.id + str);
+      this.zTree.addNodes(this.currentNode, {
+        id: res,
+        pId: this.currentNode.id,
+        name: this.new_node_name
+      });
+      this.success();
     },
     // 修改前
     beforeRename(treeId, treeNode, newName) {
       if (treeNode.name !== newName) {
-        this.strUrl = API.serviceTree.update;
-        this.objNode = {
-          id: treeNode.id,
-          node_name: newName,
-          parent_id: treeNode.parent_id,
-          node_desc: "描述：" + treeNode.name
-        };
-        this.ajaxDataEdit();
+        this.success();
+        return true;
+      } else {
+        this.error();
+        return false;
       }
     },
     //  删除前
     beforeRemove(treeId, treeNode) {
-      console.log("treeId", treeId);
-      console.log("treeNode", treeNode);
-    },
-    // 服务树子节点-编辑
-    ajaxDataEdit() {
-      let objCopy = JSON.parse(JSON.stringify(this.objNode));
-      console.log("objCopy", objCopy);
-      this.$store
-        .dispatch("ajaxPost", {
-          url: this.strUrl,
-          data: objCopy
-        })
-        .then(res => {
-          if (res.status == 200) {
-            let objData = res.data;
-            if (objData.status_code == 200) {
-              this.ajaxFetchData();
-              this.success();
-            } else {
-              this.error();
-            }
-          } else {
-            this.$Message.warning("系统出错！");
-          }
-        });
-    },
-    // 服务树子节点-删除
-    ajaxDataDelete(params) {
-      this.$store
-        .dispatch("ajaxPost", {
-          url: API.serviceTree.delete,
-          data: params
-        })
-        .then(res => {
-          if (res.status == 200) {
-            let objData = res.data;
-            if (objData.status_code == 200) {
-              this.ajaxFetchData();
-              this.success();
-            } else {
-              this.error();
-            }
-          } else {
-            this.$Message.warning("系统出错！");
-          }
-        });
-    },
-    // 获取服务树数据
-    ajaxFetchData() {
-      this.$store
-        .dispatch("ajaxPost", {
-          url: API.serviceTree.list,
-          data: {
-            searchParams: [{}]
-          }
-        })
-        .then(res => {
-          if (res.status == 200) {
-            let objData = res.data;
-            if (objData.status_code == 200) {
-              let arr = [];
-              let objCopy = objData.data;
-              objCopy.map(item => {
-                arr.push({
-                  id: item.id,
-                  parent_id: item.parent_id,
-                  name: item.node_name,
-                  fullname: item.node_fullname,
-                  fullPath: item.node_fullPath,
-                  open: true,
-                  drag: item.id ? true : false
-                });
-              });
-              console.log("arr", arr);
-            } else {
-              this.$Message.warning(objData.message);
-            }
-          } else {
-            this.$Message.warning("系统出错！");
-          }
-        });
+      var mutual = confirm("确认删除 节点 -- " + treeNode.name + " 吗？");
+      if (mutual) {
+        this.success();
+        return true;
+      } else {
+        this.error();
+        return false;
+      }
+      return true;
     },
     // 操作成功通知栏
     success() {
@@ -338,84 +255,49 @@ export default {
     },
     // 拖拽前
     beforeDrag(treeId, treeNodes) {
+      // 根节点不允许拖拽
       return !(treeNodes[0].id == 1);
     },
     // 拖拽结束前
     beforeDrop(treeId, treeNodes, targetNode, moveType) {
-      console.log("treeId", treeId);
-      console.log("treeNodes", treeNodes);
-      console.log("targetNode", targetNode);
-      console.log("moveType", moveType);
-      let bConfirmDrag = false;
       if (targetNode) {
         let treeNode = treeNodes[0];
-        this.strShowInfo =
-          "您想移动节点：【" +
-          treeNode.name +
-          "】至【" +
-          targetNode.name +
-          "】下吗？";
         //   在调用 confirm() 时，将暂停对 JavaScript 代码的执行，在用户作出响应之前，不会执行下一条语句。
-        var aa = confirm(this.strShowInfo);
+        var aa = confirm(
+          "您想移动节点：【" +
+            treeNode.name +
+            "】至【" +
+            targetNode.name +
+            "】下吗？"
+        );
         if (aa) {
-          this.strUrl = API.serviceTree.update;
-          this.objNode = {
-            id: treeNode.id,
-            node_name: treeNode.name,
-            parent_id: targetNode.id,
-            node_desc: "描述：" + treeNode.name
-          };
-          let objCopy = JSON.parse(JSON.stringify(this.objNode));
-          this.$store
-            .dispatch("ajaxPost", {
-              url: this.strUrl,
-              data: objCopy
-            })
-            .then(res => {
-              if (res.status == 200) {
-                let objData = res.data;
-                if (objData.status_code == 200) {
-                  bConfirmDrag = true;
-                  this.success();
-                  return bConfirmDrag;
-                } else {
-                  this.error();
-                  return bConfirmDrag;
-                }
-              } else {
-                this.$Message.warning("系统出错！");
-              }
-            });
+          this.zTree.moveNode(targetNode, treeNode, "inner");
+          this.success();
+          return true;
         } else {
-          return bConfirmDrag;
+          this.error();
+          return false;
         }
       } else {
+        this.error();
         return false;
       }
     }
   },
   mounted() {
-    this.objData = [
-    { id:1, pId:0, name:"随意拖拽 1"},
-    { id:11, pId:1, name:"随意拖拽 1-1"},
-    { id:12, pId:1, name:"随意拖拽 1-2"},
-    { id:111, pId:11, name:"随意拖拽 1-1-1"},
-    { id:121, pId:12, name:"随意拖拽 1-2-1"},
-    ];
     $.fn.zTree.init($("#treeDemo"), this.setting, this.objData);
-    // 数据初始化
-    // this.ajaxFetchData();
-    // let _this = this;
-    // document.onclick = function(event) {
-    //   if (
-    //     !(
-    //       event.target.id == "rMenu" ||
-    //       $(event.target).parents("#rMenu").length > 0
-    //     )
-    //   ) {
-    //     _this.bShowRightMenu = false;
-    //   }
-    // };
+    this.zTree = $.fn.zTree.getZTreeObj("treeDemo");
+    let _this = this;
+    document.onclick = function(event) {
+      if (
+        !(
+          event.target.id == "rMenu" ||
+          $(event.target).parents("#rMenu").length > 0
+        )
+      ) {
+        _this.bShowRightMenu = false;
+      }
+    };
   }
 };
 </script>
