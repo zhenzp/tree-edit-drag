@@ -32,7 +32,7 @@
 
 <template>
   <div id="app">
-    <Card title="服务树">
+    <Card title="zTree-demo">
       <div style="position:relative">
         <div id="areaTree">
           <div class="tree-box">
